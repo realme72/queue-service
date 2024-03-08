@@ -1,59 +1,32 @@
-import org.apache.http.HttpEntity;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import redis.clients.jedis.Jedis;
 
-public class UpstashQueue {
+public class UpstashPriorityQueue {
 
-    private static final String UPSTASH_API_URL = "https://your-upstash-url.com";
-    private static final String QUEUE_KEY = "my_queue";
+    private static final String QUEUE_KEY = "priority_queue";
+    private Jedis jedis;
 
-    public static void main(String[] args) {
-        // Example usage
-        UpstashQueue queue = new UpstashQueue();
-        queue.enqueue("Message 1");
-        queue.enqueue("Message 2");
-        System.out.println(queue.dequeue()); // Output: Message 1
-        System.out.println(queue.dequeue()); // Output: Message 2
+    public UpstashPriorityQueue() {
+        // Initialize Jedis instance
+        this.jedis = new Jedis("usw1-top-kodiak-33259.upstash.io", 33259, true);
+        this.jedis.auth("30e27c28d20e48c2a000fd6d081e3f9c"); 
     }
 
-    public void enqueue(String message) {
-        try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
-            HttpPost request = new HttpPost(UPSTASH_API_URL + "/RPUSH/" + QUEUE_KEY);
-            StringEntity params = new StringEntity(message);
-            request.addHeader("content-type", "text/plain");
-            request.setEntity(params);
-            HttpResponse response = httpClient.execute(request);
-            if (response.getStatusLine().getStatusCode() != 200) {
-                System.err.println("Failed to enqueue message: " + response.getStatusLine().getReasonPhrase());
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    public static void main(String[] args) {
+        
+        UpstashPriorityQueue queue = new UpstashPriorityQueue();
+        queue.enqueue("urgent message", 1);
+        queue.enqueue("normal message", 2);
+        System.out.println(queue.dequeue());
+        System.out.println(queue.dequeue());
+    }
+
+    public void enqueue(String message, int priority) {
+        jedis.zadd(QUEUE_KEY, priority, message);
     }
 
     public String dequeue() {
-        try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
-            HttpPost request = new HttpPost(UPSTASH_API_URL + "/LPOP/" + QUEUE_KEY);
-            HttpResponse response = httpClient.execute(request);
-            if (response.getStatusLine().getStatusCode() == 200) {
-                HttpEntity entity = response.getEntity();
-                if (entity != null) {
-                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(entity.getContent()))) {
-                        return reader.readLine();
-                    }
-                }
-            } else {
-                System.err.println("Failed to dequeue message: " + response.getStatusLine().getReasonPhrase());
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        return null;
+        String message = jedis.zrange(QUEUE_KEY, 0, 0).iterator().next();
+        jedis.zrem(QUEUE_KEY, message);
+        return message;
     }
 }
